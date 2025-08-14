@@ -9,32 +9,37 @@ function formatDayLabel(iso) {
   return d.toLocaleDateString(undefined, { weekday: "short" });
 }
 
-export default function WeeklyChart() {
+export default function WeeklyChart({ refreshKey = 0 }) {
   const { token } = useAuth();
   const [data, setData] = useState([]);
 
   useEffect(() => {
     let mounted = true;
-    async function load() {
+    (async () => {
       if (!token) return;
       try {
         const res = await StatsAPI.weekly(token);
-        if (mounted && Array.isArray(res?.series)) {
-          setData(res.series.map((p) => ({ day: formatDayLabel(p.day), value: p.value })));
-        }
+        if (!mounted || !Array.isArray(res?.days)) return;
+        setData(
+          res.days.map((d) => ({
+            day: formatDayLabel(d.day),
+            value: d.count,
+          }))
+        );
       } catch (e) {
-        // ignore
+        console.error(e);
       }
-    }
-    load();
-    return () => { mounted = false; };
-  }, [token]);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [token, refreshKey]); // <— include refreshKey
 
   return (
     <Card className="p-4">
       <div className="mb-2">
-        <h2 className="text-lg font-semibold">Weekly Completions</h2>
-        <p className="text-xs text-muted-foreground">Across all habits (last 7 days)</p>
+        <h2 className="text-lg font-semibold">Weekly Activity</h2>
+        <p className="text-xs text-muted-foreground">Total completions over the last 7 days</p>
       </div>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
@@ -50,5 +55,3 @@ export default function WeeklyChart() {
     </Card>
   );
 }
-
-

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Habit } from '../models/Habit.js';
 import { HabitEvent } from '../models/HabitEvent.js';
+import StreakService from '../services/streakService.js';
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -71,40 +72,21 @@ export async function toggleHabit(req, res, next) {
 
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfYesterday = new Date(startOfToday);
-    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
 
     if (habit.completedToday) {
-      // Undo today's completion: revert streak by 1 if last action was today
+      // Undo today's completion
       habit.completedToday = false;
-      // If lastCompletedAt was today, reduce streak by 1, else keep (safety)
-      const wasToday = habit.lastCompletedAt && habit.lastCompletedAt >= startOfToday;
-      if (wasToday) {
-        habit.streak = Math.max(0, (habit.streak || 0) - 1);
-      }
       habit.prevLastCompletedAt = habit.lastCompletedAt;
       habit.lastCompletedAt = null;
+      
       // Remove today's event if exists
       await HabitEvent.deleteOne({ userId: req.userId, habitId: habit.id, day: startOfToday });
     } else {
       // Mark as completed today
-      const last = habit.lastCompletedAt;
-      const wasYesterday = last && last >= startOfYesterday && last < startOfToday;
-      const wasToday = last && last >= startOfToday;
-
       habit.completedToday = true;
-      if (wasToday) {
-        // Already completed today: keep streak
-        habit.streak = habit.streak || 1;
-      } else if (wasYesterday) {
-        // Maintain/increment streak if yesterday was completed
-        habit.streak = (habit.streak || 0) + 1;
-      } else {
-        // Reset streak to 1 if yesterday was missed or first completion
-        habit.streak = 1;
-      }
       habit.prevLastCompletedAt = habit.lastCompletedAt;
       habit.lastCompletedAt = now;
+      
       // Upsert today's completion event
       await HabitEvent.updateOne(
         { userId: req.userId, habitId: habit.id, day: startOfToday },
@@ -112,8 +94,15 @@ export async function toggleHabit(req, res, next) {
         { upsert: true }
       );
     }
+    
     await habit.save();
-    res.json({ habit });
+    
+    // Update streaks using the streak service for accurate calculation
+    await StreakService.updateUserStreaks(req.userId);
+    
+    // Get the updated habit with correct streak
+    const updatedHabit = await Habit.findById(habit._id);
+    res.json({ habit: updatedHabit });
   } catch (err) {
     next(err);
   }

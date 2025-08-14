@@ -6,6 +6,7 @@ import authRoutes from './routes/auth.routes.js';
 import habitRoutes from './routes/habits.routes.js';
 import taskRoutes from './routes/tasks.routes.js';
 import statsRoutes from './routes/stats.routes.js';
+import streakRoutes from './routes/streaks.routes.js';
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/habits', habitRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/streaks', streakRoutes);
 
 // 404
 app.use((req, res, next) => {

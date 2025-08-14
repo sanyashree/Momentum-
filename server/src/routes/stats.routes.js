@@ -1,14 +1,12 @@
 import { Router } from 'express';
+import * as stats from '../controllers/stats.controller.js';
 import { requireAuth } from '../middleware/auth.js';
-import { weeklyCompletion, weeklyByHabit, leaderboard } from '../controllers/stats.controller.js';
 
 const router = Router();
-router.use(requireAuth);
 
-router.get('/weekly', weeklyCompletion);
-router.get('/weekly-by-habit', weeklyByHabit);
-router.get('/leaderboard', leaderboard);
+// all require auth
+router.get("/weekly", requireAuth, stats.getWeeklyStats);
+router.get("/weekly-by-habit", requireAuth, stats.getWeeklyByHabit);
+router.get("/leaderboard", requireAuth, stats.getLeaderboard);
 
 export default router;
-
-

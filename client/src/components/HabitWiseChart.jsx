@@ -9,36 +9,53 @@ function toDayLabel(iso) {
   return d.toLocaleDateString(undefined, { weekday: "short" });
 }
 
-export default function HabitWiseChart() {
+export default function HabitWiseChart({ refreshKey = 0 }) {
   const { token } = useAuth();
   const [series, setSeries] = useState([]);
   const [categories, setCategories] = useState([]);
 
   useEffect(() => {
-    let mounted = true;
-    async function load() {
+    let cancelled = false;
+    (async () => {
       if (!token) return;
       try {
         const res = await StatsAPI.weeklyByHabit(token);
-        if (mounted && Array.isArray(res?.habits)) {
-          // categories: last 7 days (from first habit's series)
-          const days = res.habits[0]?.series?.map((p) => toDayLabel(p.day)) || [];
-          setCategories(days);
-          setSeries(res.habits);
-        }
-      } catch (e) {}
-    }
-    load();
-    return () => { mounted = false; };
-  }, [token]);
+        if (cancelled || !Array.isArray(res?.items)) return;
 
-  // Recharts supports one dataset; we transform categories into x-axis labels and
-  // build a dataset where each habit is a separate line via keys.
-  const chartData = categories.map((day, idx) => {
-    const row = { day };
-    for (const h of series) {
-      row[h.name] = h.series?.[idx]?.value ?? 0;
-    }
+        // items: [{ habitId, habitName, points: [{ day, count }, ...] }, ...]
+        const habits = res.items;
+        const x = Array.from(
+          new Set(
+            habits.flatMap((h) => (h.points || []).map((p) => toDayLabel(p.day)))
+          )
+        );
+
+        const rows = habits.map((h) => {
+          const map = new Map((h.points || []).map((p) => [toDayLabel(p.day), p.count]));
+          return {
+            name: h.habitName || "Habit",
+            data: x.map((label) => map.get(label) ?? 0),
+          };
+        });
+
+        if (!cancelled) {
+          setCategories(x);
+          setSeries(rows);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, refreshKey]); // <— include refreshKey
+
+  const chartData = categories.map((label, i) => {
+    const row = { day: label };
+    series.forEach((s) => {
+      row[s.name] = s.data[i] ?? 0;
+    });
     return row;
   });
 
@@ -46,7 +63,7 @@ export default function HabitWiseChart() {
     <Card className="p-4">
       <div className="mb-2">
         <h2 className="text-lg font-semibold">Habit-wise Weekly Completions</h2>
-        <p className="text-xs text-muted-foreground">Each line is a habit over the last 7 days</p>
+        <p className="text-xs text-muted-foreground">Each line shows a habit over the last 7 days</p>
       </div>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
@@ -56,8 +73,8 @@ export default function HabitWiseChart() {
             <YAxis allowDecimals={false} />
             <Tooltip />
             <Legend />
-            {series.map((h) => (
-              <Line key={h.habitId} type="monotone" dataKey={h.name} strokeWidth={2} dot />
+            {series.map((s) => (
+              <Line key={s.name} type="monotone" dataKey={s.name} strokeWidth={2} dot />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -65,5 +82,3 @@ export default function HabitWiseChart() {
     </Card>
   );
 }
-
-

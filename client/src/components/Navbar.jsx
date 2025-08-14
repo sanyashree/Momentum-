@@ -1,11 +1,11 @@
-// Left: your logo. Right: Logout button.
-// Ensure public/logo.jpeg exists.
+// Left: your logo. Right: Conditional auth buttons based on login state.
 
 import { Button } from "../components/ui/button";
 import { useAuth } from "../hooks/useAuth.jsx";
+import { Link } from "react-router-dom";
 
 export default function Navbar() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
 
   return (
     <nav className="w-full border-b bg-background">
@@ -19,9 +19,27 @@ export default function Navbar() {
           />
         </div>
 
-        <Button size="sm" variant="outline" onClick={logout}>
-          Logout
-        </Button>
+        {/* Conditional auth buttons */}
+        {user ? (
+          // User is logged in - show logout button
+          <Button size="sm" variant="outline" onClick={logout}>
+            Logout
+          </Button>
+        ) : (
+          // User is not logged in - show login and signup buttons
+          <div className="flex items-center gap-3">
+            <Link to="/login">
+              <Button size="sm" variant="outline">
+                Login
+              </Button>
+            </Link>
+            <Link to="/signup">
+              <Button size="sm" variant="default">
+                Sign Up
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
     </nav>
   );

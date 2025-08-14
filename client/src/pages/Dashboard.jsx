@@ -2,7 +2,6 @@
 // Dynamic Habits and Tasks with add/toggle/delete. All data comes from the API.
 
 import { useEffect, useState } from "react";
-import Navbar from "../components/Navbar";
 import HabitCard from "../components/HabitCard";
 import TaskCard from "../components/TaskCard";
 import WeeklyChart from "../components/WeeklyChart";
@@ -16,16 +15,19 @@ import { HabitsAPI, TasksAPI } from "../lib/api";
 
 export default function Dashboard() {
   const { token } = useAuth();
+
   const [habits, setHabits] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [newHabit, setNewHabit] = useState("");
   const [newTask, setNewTask] = useState("");
 
-  // Load habits and tasks from API on mount
+  // bump to force charts to refetch after a change
+  const [chartsVersion, setChartsVersion] = useState(0);
+
   useEffect(() => {
     let isMounted = true;
     async function load() {
-      if (!token) return; // will be present in Protected routes
+      if (!token) return;
       try {
         const data = await HabitsAPI.list(token);
         if (isMounted && Array.isArray(data?.habits)) {
@@ -53,9 +55,8 @@ export default function Dashboard() {
     };
   }, [token]);
 
-  // Habits: toggle, add, delete
   const handleToggleHabit = async (id) => {
-    // Optimistic UI update
+    // optimistic UI
     setHabits((prev) =>
       prev.map((h) => {
         if (h.id !== id) return h;
@@ -70,21 +71,33 @@ export default function Dashboard() {
       const updated = res?.habit;
       if (updated) {
         setHabits((prev) =>
-          prev.map((h) => (h.id === id ? {
-            id: updated._id,
-            name: updated.name,
-            color: updated.color || h.color,
-            streak: typeof updated.streak === "number" ? updated.streak : 0,
-            completedToday: !!updated.completedToday,
-          } : h))
+          prev.map((h) =>
+            h.id === id
+              ? {
+                  id: updated._id,
+                  name: updated.name,
+                  color: updated.color || h.color,
+                  streak: typeof updated.streak === "number" ? updated.streak : 0,
+                  completedToday: !!updated.completedToday,
+                }
+              : h
+          )
         );
       }
     } catch (err) {
-      // Revert on failure
-      setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, completedToday: !h.completedToday, streak: h.completedToday ? h.streak + 1 : Math.max(0, h.streak - 1) } : h)));
+      // revert on error
+      setHabits((prev) =>
+        prev.map((h) => {
+          if (h.id !== id) return h;
+          const completedToday = !h.completedToday;
+          const streak = completedToday ? h.streak + 1 : Math.max(0, h.streak - 1);
+          return { ...h, completedToday, streak };
+        })
+      );
       console.error("Failed to toggle habit:", err);
+    } finally {
+      setChartsVersion((v) => v + 1); // force charts refresh
     }
-
   };
 
   const handleAddHabit = async (e) => {
@@ -94,10 +107,17 @@ export default function Dashboard() {
     try {
       const { habit } = await HabitsAPI.create({ name }, token);
       setHabits((prev) => [
-        { id: habit._id, name: habit.name, color: habit.color || "bg-emerald-100", streak: habit.streak || 0, completedToday: !!habit.completedToday },
+        {
+          id: habit._id,
+          name: habit.name,
+          color: habit.color || "bg-emerald-100",
+          streak: habit.streak || 0,
+          completedToday: !!habit.completedToday,
+        },
         ...prev,
       ]);
       setNewHabit("");
+      setChartsVersion((v) => v + 1);
     } catch (err) {
       console.error("Failed to create habit:", err);
     }
@@ -108,13 +128,13 @@ export default function Dashboard() {
     setHabits((prev) => prev.filter((h) => h.id !== id));
     try {
       await HabitsAPI.remove(id, token);
+      setChartsVersion((v) => v + 1);
     } catch (err) {
       console.error("Failed to delete habit:", err);
       setHabits(previous);
     }
   };
 
-  // Tasks: toggle, add, delete
   const handleAddTask = async (e) => {
     e.preventDefault();
     const title = newTask.trim();
@@ -154,27 +174,27 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top nav (logo + logout) */}
-      {/* Main content container */}
+      {/* page content (no Navbar here) */}
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Habits + Graphs (2 cols) */}
+          {/* Left: Habits + Graphs */}
           <div className="lg:col-span-2 space-y-6">
             {/* Habits */}
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Habits</h2>
               </div>
+
               <form onSubmit={handleAddHabit} className="flex gap-2">
                 <Input
                   value={newHabit}
                   onChange={(e) => setNewHabit(e.target.value)}
-                  placeholder="New habit name"
-                  aria-label="New habit name"
+                  placeholder="Add a new habit…"
                 />
-                <Button type="submit">Add Habit</Button>
+                <Button type="submit">Add</Button>
               </form>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+              <div className="space-y-2">
                 {habits.map((h) => (
                   <HabitCard
                     key={h.id}
@@ -184,35 +204,36 @@ export default function Dashboard() {
                   />
                 ))}
                 {habits.length === 0 ? (
-                  <Card className="p-4 text-sm text-muted-foreground">No habits yet. Add your first one above.</Card>
+                  <Card className="p-4 text-sm text-muted-foreground">No habits yet. Add one above.</Card>
                 ) : null}
               </div>
             </section>
 
-            {/* Graphs */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <WeeklyChart />
-              <HabitWiseChart />
-              <Leaderboard />
-            </div>
+            {/* Charts */}
+            <section className="grid grid-cols-1 gap-4">
+              <WeeklyChart refreshKey={chartsVersion} />
+              <HabitWiseChart refreshKey={chartsVersion} />
+            </section>
           </div>
 
-          {/* Right: Tasks (1 col) */}
+          {/* Right: Leaderboard + Tasks */}
           <div className="space-y-6">
+            <section>
+              <Leaderboard refreshKey={chartsVersion} />
+            </section>
+
             <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Tasks</h2>
-              </div>
+              <h2 className="text-lg font-semibold">Tasks</h2>
               <form onSubmit={handleAddTask} className="flex gap-2">
                 <Input
                   value={newTask}
                   onChange={(e) => setNewTask(e.target.value)}
-                  placeholder="New task title"
-                  aria-label="New task title"
+                  placeholder="Add a task…"
                 />
-                <Button type="submit">Add Task</Button>
+                <Button type="submit">Add</Button>
               </form>
-              <div className="grid grid-cols-1 gap-3">
+
+              <div className="space-y-2">
                 {tasks.map((t) => (
                   <TaskCard
                     key={t.id}
